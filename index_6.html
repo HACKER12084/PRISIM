@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PRISM // Laser Vault — First Person</title>
+<style>
+  :root{
+    --bg:#04070c; --panel:#0b1622; --accent:#28e0ff; --accent-dim:#0f6b7a;
+    --gold:#ffd166; --text:#cfe9f7; --wall-edge:#2f4a63;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:#000;font-family:'Segoe UI','Consolas',monospace;color:var(--text);overflow:hidden;user-select:none;}
+  #app{position:relative;width:100%;height:100%;}
+  canvas{display:block;width:100%;height:100%;}
+
+  #hud{
+    position:absolute; top:0; left:0; width:100%; display:flex; align-items:center; justify-content:space-between;
+    padding:12px 20px; background:linear-gradient(180deg,rgba(4,8,13,0.85),transparent);
+    pointer-events:none; z-index:5;
+  }
+  #hud h1{font-size:15px;letter-spacing:4px;margin:0;color:var(--accent);text-shadow:0 0 8px var(--accent);}
+  #hud .sub{font-size:10px;color:#7fb3c9;letter-spacing:2px;}
+  #hud .right{display:flex;gap:10px;pointer-events:all;}
+  button{
+    background:linear-gradient(180deg,#12222f,#0a151f);border:1px solid var(--accent-dim);color:var(--accent);
+    padding:6px 12px;font-family:inherit;font-size:11px;letter-spacing:1px;border-radius:6px;cursor:pointer;
+  }
+  button:hover{background:#123444;box-shadow:0 0 10px rgba(40,224,255,0.35);}
+
+  #crosshair{
+    position:absolute; top:50%; left:50%; width:8px; height:8px; margin:-4px 0 0 -4px;
+    border:1px solid rgba(207,233,247,0.8); border-radius:50%; z-index:5; pointer-events:none;
+    box-shadow:0 0 6px rgba(40,224,255,0.6);
+  }
+
+  #overlay{
+    position:absolute; inset:0; background:rgba(2,5,9,0.86); display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:14px; text-align:center; z-index:10;
+  }
+  #overlay.hidden{display:none;}
+  #overlay h2{color:var(--gold);text-shadow:0 0 14px var(--gold);letter-spacing:3px;margin:0;font-size:22px;}
+  #overlay p{max-width:420px;font-size:13px;line-height:1.6;color:var(--text);margin:0;}
+  #overlay .keys{font-size:12px;color:#7fb3c9;}
+  #overlay kbd{background:#0d1c28;border:1px solid var(--wall-edge);border-radius:4px;padding:1px 7px;color:var(--accent);}
+
+  #levels{
+    position:absolute; bottom:14px; left:50%; transform:translateX(-50%);
+    display:flex; gap:6px; z-index:5; pointer-events:all; flex-wrap:wrap; justify-content:center;
+    max-width:92vw;
+  }
+  .lvl-btn{
+    width:30px;height:26px;font-size:11px;border-radius:5px;display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--wall-edge);background:rgba(10,20,31,0.8);color:#6f92a6;cursor:pointer;
+  }
+  .lvl-btn.done{border-color:var(--accent);color:var(--accent);box-shadow:0 0 8px rgba(40,224,255,0.4);}
+  .lvl-btn.active{background:var(--accent-dim);color:#fff;}
+  .lvl-btn.custom{border-color:#c98a3a;color:#e0ac5e;}
+  .lvl-btn.addNew{border-style:dashed;color:#5c8296;font-size:16px;}
+
+  #hint{
+    position:absolute; bottom:50px; left:50%; transform:translateX(-50%); z-index:5;
+    font-size:11px; color:#9cd4e8; letter-spacing:1px; background:rgba(6,12,18,0.6);
+    padding:4px 10px; border-radius:6px; pointer-events:none; max-width:70%; text-align:center;
+  }
+
+  #customOverlay{
+    position:absolute; inset:0; background:rgba(2,5,9,0.92); display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:10px; text-align:center; z-index:20; padding:20px;
+  }
+  #customOverlay.hidden{display:none;}
+  #customOverlay h2{color:var(--gold);text-shadow:0 0 14px var(--gold);letter-spacing:3px;margin:0;font-size:20px;}
+  .ceHint{max-width:560px;font-size:11px;line-height:1.6;color:#9cd4e8;margin:0;}
+  .ceHint kbd{background:#0d1c28;border:1px solid var(--wall-edge);border-radius:4px;padding:1px 6px;color:var(--accent);}
+  #ceText{
+    width:min(90vw,620px); height:260px; background:#050c14; color:var(--text);
+    border:1px solid var(--wall-edge); border-radius:8px; font-family:'Consolas',monospace;
+    font-size:12px; padding:10px; resize:vertical;
+  }
+  #ceError{ color:#ff6b81; font-size:12px; min-height:16px; max-width:600px; }
+  .ceBtns{ display:flex; gap:10px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="stage"></canvas>
+  <div id="crosshair"></div>
+
+  <div id="hud">
+    <div>
+      <h1>PRISM</h1>
+      <div class="sub" id="levelLabel">LEVEL 1 / 10</div>
+    </div>
+    <div class="right">
+      <button id="menuBtn">MENU</button>
+      <button id="customBtn">CUSTOM</button>
+      <button id="restartBtn">RESTART (R)</button>
+    </div>
+  </div>
+
+  <div id="hint"></div>
+  <div id="levels"></div>
+
+  <div id="overlay">
+    <h2 id="ovTitle">PRISM // LASER VAULT</h2>
+    <p id="ovBody">Step into the vault. Push crates, bend beams off mirrors, and light every
+      target to unlock the exit. Click to look around.</p>
+    <div class="keys">
+      <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move &nbsp; | &nbsp;
+      MOUSE look &nbsp; | &nbsp; <kbd>T</kbd> rotate mirror &nbsp; | &nbsp; <kbd>F</kbd> destroy crate &nbsp; | &nbsp; <kbd>R</kbd> restart
+    </div>
+    <button id="ovBtn">ENTER VAULT</button>
+  </div>
+
+  <div id="customOverlay" class="hidden">
+    <h2>CUSTOM CHAMBER</h2>
+    <p class="ceHint">Describe a level as JSON. Layout uses <kbd>#</kbd> wall,
+      <kbd>.</kbd> floor, <kbd>P</kbd> player start, <kbd>B</kbd> pushable crate,
+      <kbd>C</kbd> fixed/destructible crate. An exit is added automatically if
+      you don't place an <kbd>X</kbd>. Coordinates are column,row (x,y) starting at 0.</p>
+    <textarea id="ceText" spellcheck="false"></textarea>
+    <div id="ceError"></div>
+    <div class="ceBtns">
+      <button id="ceLoadBtn">TEST PLAY</button>
+      <button id="ceSaveBtn">SAVE TO MY LEVELS</button>
+      <button id="ceCancelBtn">CLOSE</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   PRISM — Laser Vault (First-Person 3D Edition)
+   Raw WebGL, no external libraries. Puzzle logic (grid, mirrors, laser
+   propagation, boxes, targets, exit) is identical in spirit to the
+   original top-down version, but rendered and controlled in true
+   first-person 3D with mouse-look and smooth grid-stepped movement.
+   Classes: Player, Mirror, Laser, Level, Game.
+   ===================================================================== */
+
+const CELL = 2.2;      // world units per grid cell
+const EYE_H = 1.15;    // eye height above floor
+const WALL_H = 2.0;    // wall height
+
+/* ---------------------------------------------------------------------
+   Minimal column-major mat4 math (glMatrix-style), hand rolled so the
+   project has zero external dependencies.
+   --------------------------------------------------------------------- */
+const mat4 = {
+  identity(){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); },
+  multiply(out,a,b){
+    const a00=a[0],a01=a[1],a02=a[2],a03=a[3],a10=a[4],a11=a[5],a12=a[6],a13=a[7],
+          a20=a[8],a21=a[9],a22=a[10],a23=a[11],a30=a[12],a31=a[13],a32=a[14],a33=a[15];
+    for(let i=0;i<4;i++){
+      const b0=b[i*4],b1=b[i*4+1],b2=b[i*4+2],b3=b[i*4+3];
+      out[i*4]  =b0*a00+b1*a10+b2*a20+b3*a30;
+      out[i*4+1]=b0*a01+b1*a11+b2*a21+b3*a31;
+      out[i*4+2]=b0*a02+b1*a12+b2*a22+b3*a32;
+      out[i*4+3]=b0*a03+b1*a13+b2*a23+b3*a33;
+    }
+    return out;
+  },
+  translate(x,y,z){ const m=mat4.identity(); m[12]=x;m[13]=y;m[14]=z; return m; },
+  scale(x,y,z){ const m=mat4.identity(); m[0]=x;m[5]=y;m[10]=z; return m; },
+  rotY(r){ const c=Math.cos(r),s=Math.sin(r); const m=mat4.identity(); m[0]=c;m[2]=-s;m[8]=s;m[10]=c; return m; },
+  perspective(fovy,aspect,near,far){
+    const f=1/Math.tan(fovy/2), nf=1/(near-far);
+    const m = new Float32Array(16);
+    m[0]=f/aspect; m[5]=f; m[10]=(far+near)*nf; m[11]=-1; m[14]=2*far*near*nf;
+    return m;
+  },
+  lookAt(eye,center,up){
+    let z0=eye[0]-center[0], z1=eye[1]-center[1], z2=eye[2]-center[2];
+    let len=Math.hypot(z0,z1,z2)||1; z0/=len;z1/=len;z2/=len;
+    let x0=up[1]*z2-up[2]*z1, x1=up[2]*z0-up[0]*z2, x2=up[0]*z1-up[1]*z0;
+    len=Math.hypot(x0,x1,x2); if(len){x0/=len;x1/=len;x2/=len;}
+    let y0=z1*x2-z2*x1, y1=z2*x0-z0*x2, y2=z0*x1-z1*x0;
+    const out=new Float32Array(16);
+    out[0]=x0;out[1]=y0;out[2]=z0;out[3]=0;
+    out[4]=x1;out[5]=y1;out[6]=z1;out[7]=0;
+    out[8]=x2;out[9]=y2;out[10]=z2;out[11]=0;
+    out[12]=-(x0*eye[0]+x1*eye[1]+x2*eye[2]);
+    out[13]=-(y0*eye[0]+y1*eye[1]+y2*eye[2]);
+    out[14]=-(z0*eye[0]+z1*eye[1]+z2*eye[2]);
+    out[15]=1;
+    return out;
+  }
+};
+
+// Grid direction vectors (x = column, y = row/"depth") ------------------
+const DIR = { UP:{x:0,y:-1}, DOWN:{x:0,y:1}, LEFT:{x:-1,y:0}, RIGHT:{x:1,y:0} };
+function reflectSlash(d){ if(d===DIR.RIGHT)return DIR.UP; if(d===DIR.UP)return DIR.RIGHT; if(d===DIR.LEFT)return DIR.DOWN; if(d===DIR.DOWN)return DIR.LEFT; }
+function reflectBackslash(d){ if(d===DIR.RIGHT)return DIR.DOWN; if(d===DIR.DOWN)return DIR.RIGHT; if(d===DIR.LEFT)return DIR.UP; if(d===DIR.UP)return DIR.LEFT; }
+
+/* =====================================================================
+   PLAYER — first-person avatar: grid position + free mouse-look camera,
+   with smooth interpolated movement and a subtle walking bob.
+   ===================================================================== */
+class Player{
+  constructor(gx,gy){
+    this.gx=gx; this.gy=gy;
+    this.wx=gx*CELL; this.wz=gy*CELL;   // rendered world position
+    this.targetWx=this.wx; this.targetWz=this.wz;
+    this.yaw = 0; this.pitch = 0;
+    this.moving=false; this.bob=0;
+  }
+  setGrid(gx,gy){
+    this.gx=gx; this.gy=gy;
+    this.targetWx=gx*CELL; this.targetWz=gy*CELL;
+    this.moving=true;
+  }
+  update(dt){
+    const dx=this.targetWx-this.wx, dz=this.targetWz-this.wz;
+    const dist=Math.hypot(dx,dz);
+    if(dist<0.01){ this.wx=this.targetWx; this.wz=this.targetWz; this.moving=false; this.bob*=0.9; }
+    else{
+      const speed=7.5*dt;
+      const t=Math.min(1,speed/dist);
+      this.wx+=dx*t; this.wz+=dz*t;
+      this.bob += dt*14;
+    }
+  }
+  eyePos(){
+    const bobY = this.moving ? Math.sin(this.bob)*0.045 : 0;
+    return [this.wx, EYE_H+bobY, this.wz];
+  }
+  forward(){ return [Math.sin(this.yaw)*Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw)*Math.cos(this.pitch)]; }
+}
+
+/* =====================================================================
+   MIRROR
+   ===================================================================== */
+class Mirror{
+  constructor(x,y,type){ this.x=x; this.y=y; this.type=type; }
+  reflect(dir){ return this.type==='/' ? reflectSlash(dir) : reflectBackslash(dir); }
+  toggle(){ this.type = (this.type==='/') ? '\\' : '/'; }
+}
+
+/* =====================================================================
+   LASER — same grid propagation algorithm as the top-down version;
+   produces 3D world-space segments for rendering as glowing beams.
+   ===================================================================== */
+class Laser{
+  constructor(emitters){ this.emitters=emitters; this.segments=[]; this.hitTargets=new Set(); }
+  compute(level){
+    this.segments=[]; this.hitTargets=new Set();
+    for(const emitter of this.emitters){
+      let x=emitter.x, y=emitter.y, dir=emitter.dir, guard=0, segStart={x,y};
+      while(guard++<200){
+        const nx=x+dir.x, ny=y+dir.y;
+        if(!level.inBounds(nx,ny) || level.isWall(nx,ny)){ this.segments.push({x1:segStart.x,y1:segStart.y,x2:x,y2:y}); break; }
+        if(level.isBox(nx,ny)){ this.segments.push({x1:segStart.x,y1:segStart.y,x2:x,y2:y}); this.segments.push({x1:x,y1:y,x2:nx,y2:ny}); break; }
+        const mirror=level.mirrorAt(nx,ny);
+        if(mirror){ this.segments.push({x1:segStart.x,y1:segStart.y,x2:nx,y2:ny}); dir=mirror.reflect(dir); x=nx;y=ny; segStart={x,y}; continue; }
+        const target=level.targetAt(nx,ny);
+        if(target){ this.segments.push({x1:segStart.x,y1:segStart.y,x2:nx,y2:ny}); this.hitTargets.add(target.id); break; }
+        x=nx; y=ny;
+      }
+    }
+  }
+}
+
+/* =====================================================================
+   LEVEL — parses ASCII layout + entity lists into live grid state.
+   The exit tile behaves as a solid wall until every target is lit.
+   ===================================================================== */
+class Level{
+  constructor(def){
+    this.name=def.name; this.rows=def.layout.length; this.cols=def.layout[0].length;
+    this.walls=new Set(); this.mirrors=[]; this.targets=[]; this.boxesInit=[]; this.hint=def.hint||'';
+    const dirMap={up:DIR.UP,down:DIR.DOWN,left:DIR.LEFT,right:DIR.RIGHT};
+    def.layout.forEach((row,y)=>{
+      [...row].forEach((ch,x)=>{
+        if(ch==='#') this.walls.add(x+','+y);
+        if(ch==='X') this.exit={x,y};
+        if(ch==='P') this.playerStart={x,y};
+        if(ch==='B') this.boxesInit.push({x,y,pushable:true,destructible:false});
+        if(ch==='C') this.boxesInit.push({x,y,pushable:false,destructible:true});
+      });
+    });
+    (def.mirrors||[]).forEach(m=>this.mirrors.push(new Mirror(m.x,m.y,m.type)));
+    (def.targets||[]).forEach((t,i)=>this.targets.push({id:i,x:t.x,y:t.y,active:false}));
+    this.emitters=def.emitters.map(e=>({x:e.x,y:e.y,dir:dirMap[e.dir]}));
+    this.reset();
+  }
+  reset(){
+    this.boxes=this.boxesInit.map(b=>({x:b.x,y:b.y,pushable:b.pushable,destructible:b.destructible}));
+    this.targets.forEach(t=>t.active=false); this.exitOpen=false;
+  }
+  inBounds(x,y){ return x>=0&&y>=0&&x<this.cols&&y<this.rows; }
+  isWall(x,y){ if(this.walls.has(x+','+y)) return true; if(this.exit&&this.exit.x===x&&this.exit.y===y&&!this.exitOpen) return true; return false; }
+  isBox(x,y){ return this.boxes.some(b=>b.x===x&&b.y===y); }
+  boxAt(x,y){ return this.boxes.find(b=>b.x===x&&b.y===y); }
+  mirrorAt(x,y){ return this.mirrors.find(m=>m.x===x&&m.y===y); }
+  targetAt(x,y){ return this.targets.find(t=>t.x===x&&t.y===y); }
+  applyHits(hitSet){
+    let allOn=true;
+    this.targets.forEach(t=>{ t.active=hitSet.has(t.id); if(!t.active) allOn=false; });
+    this.exitOpen = allOn && this.targets.length>0;
+  }
+}
+
+/* =====================================================================
+   GAME — WebGL setup, render loop, first-person controls, win logic,
+   and localStorage progress persistence.
+   ===================================================================== */
+class Game{
+  constructor(canvas, levelDefs){
+    this.canvas=canvas;
+    this.gl=canvas.getContext('webgl',{antialias:true});
+    if(!this.gl){ alert('WebGL not supported in this browser.'); return; }
+    this.builtinCount=levelDefs.length;
+    this.levelDefs=levelDefs;
+    this.customLevels=this.loadCustomLevels();
+    this.customLevels.forEach(def=>this.levelDefs.push(def));
+    this.progress=this.loadProgress();
+    this.currentIndex=Math.min(this.progress.unlocked, levelDefs.length-1);
+    this.keys={};
+    this.locked=false;
+    this.pointerLocked=false;
+    this.lastTime=performance.now();
+
+    this.initGL();
+    this.bindInput();
+    this.initCustomEditor();
+    this.buildLevelSelector();
+    this.loadLevel(this.currentIndex);
+    window.addEventListener('resize', ()=>this.resize());
+    this.resize();
+    requestAnimationFrame(this.loop.bind(this));
+  }
+
+  /* ---------------- WebGL init ---------------- */
+  initGL(){
+    const gl=this.gl;
+    const vsSrc=`
+      attribute vec3 aPos; attribute vec3 aNormal;
+      uniform mat4 uModel,uView,uProj;
+      uniform vec3 uLightDir, uColor; uniform float uEmissive;
+      varying vec3 vColor; varying float vFog;
+      void main(){
+        vec4 world = uModel*vec4(aPos,1.0);
+        vec4 viewPos = uView*world;
+        gl_Position = uProj*viewPos;
+        vec3 n = normalize(mat3(uModel)*aNormal);
+        float diff = max(dot(n, normalize(-uLightDir)), 0.0);
+        float light = 0.4 + 0.6*diff;
+        vColor = uColor*light + uColor*uEmissive;
+        float dist = length(viewPos.xyz);
+        vFog = clamp((dist-7.0)/20.0, 0.0, 1.0);
+      }`;
+    const fsSrc=`
+      precision mediump float;
+      varying vec3 vColor; varying float vFog;
+      uniform vec3 uFogColor;
+      void main(){
+        vec3 col = mix(vColor, uFogColor, vFog);
+        gl_FragColor = vec4(col,1.0);
+      }`;
+    const compile=(type,src)=>{
+      const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+      if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
+      return s;
+    };
+    const prog=gl.createProgram();
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER,vsSrc));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER,fsSrc));
+    gl.linkProgram(prog);
+    this.prog=prog;
+    gl.useProgram(prog);
+
+    this.loc={
+      aPos:gl.getAttribLocation(prog,'aPos'),
+      aNormal:gl.getAttribLocation(prog,'aNormal'),
+      uModel:gl.getUniformLocation(prog,'uModel'),
+      uView:gl.getUniformLocation(prog,'uView'),
+      uProj:gl.getUniformLocation(prog,'uProj'),
+      uLightDir:gl.getUniformLocation(prog,'uLightDir'),
+      uColor:gl.getUniformLocation(prog,'uColor'),
+      uEmissive:gl.getUniformLocation(prog,'uEmissive'),
+      uFogColor:gl.getUniformLocation(prog,'uFogColor'),
+    };
+
+    // unit cube, -0.5..0.5, position+normal interleaved (6 floats/vert, 36 verts)
+    const p=0.5;
+    const faces=[
+      // +X
+      [p,-p,-p, 1,0,0],[p,p,-p,1,0,0],[p,p,p,1,0,0], [p,-p,-p,1,0,0],[p,p,p,1,0,0],[p,-p,p,1,0,0],
+      // -X
+      [-p,-p,p,-1,0,0],[-p,p,p,-1,0,0],[-p,p,-p,-1,0,0], [-p,-p,p,-1,0,0],[-p,p,-p,-1,0,0],[-p,-p,-p,-1,0,0],
+      // +Y
+      [-p,p,-p,0,1,0],[-p,p,p,0,1,0],[p,p,p,0,1,0], [-p,p,-p,0,1,0],[p,p,p,0,1,0],[p,p,-p,0,1,0],
+      // -Y
+      [-p,-p,p,0,-1,0],[-p,-p,-p,0,-1,0],[p,-p,-p,0,-1,0], [-p,-p,p,0,-1,0],[p,-p,-p,0,-1,0],[p,-p,p,0,-1,0],
+      // +Z
+      [-p,-p,p,0,0,1],[p,-p,p,0,0,1],[p,p,p,0,0,1], [-p,-p,p,0,0,1],[p,p,p,0,0,1],[-p,p,p,0,0,1],
+      // -Z
+      [p,-p,-p,0,0,-1],[-p,-p,-p,0,0,-1],[-p,p,-p,0,0,-1], [p,-p,-p,0,0,-1],[-p,p,-p,0,0,-1],[p,p,-p,0,0,-1],
+    ];
+    const data=new Float32Array(faces.flat());
+    this.cubeBuf=gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.cubeBuf);
+    gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
+    this.cubeVertCount=36;
+
+    gl.enable(gl.DEPTH_TEST);
+    gl.clearColor(0.02,0.035,0.055,1);
+  }
+
+  resize(){
+    const gl=this.gl;
+    const w=this.canvas.clientWidth, h=this.canvas.clientHeight;
+    this.canvas.width=w; this.canvas.height=h;
+    gl.viewport(0,0,w,h);
+  }
+
+  drawCube(pos, size, rotY, color, emissive){
+    const gl=this.gl;
+    let M=mat4.identity();
+    M=mat4.multiply(mat4.identity(), mat4.translate(pos[0],pos[1],pos[2]), mat4.multiply(mat4.identity(), mat4.rotY(rotY||0), mat4.scale(size[0],size[1],size[2])));
+    gl.bindBuffer(gl.ARRAY_BUFFER,this.cubeBuf);
+    gl.enableVertexAttribArray(this.loc.aPos);
+    gl.vertexAttribPointer(this.loc.aPos,3,gl.FLOAT,false,24,0);
+    gl.enableVertexAttribArray(this.loc.aNormal);
+    gl.vertexAttribPointer(this.loc.aNormal,3,gl.FLOAT,false,24,12);
+    gl.uniformMatrix4fv(this.loc.uModel,false,M);
+    gl.uniform3fv(this.loc.uColor,color);
+    gl.uniform1f(this.loc.uEmissive, emissive||0);
+    gl.drawArrays(gl.TRIANGLES,0,this.cubeVertCount);
+  }
+
+  // ---------------- persistence ----------------
+  loadProgress(){ try{ const raw=localStorage.getItem('prism_progress3d'); if(raw) return JSON.parse(raw);}catch(e){} return {unlocked:0,completed:[]}; }
+  saveProgress(){ localStorage.setItem('prism_progress3d', JSON.stringify(this.progress)); }
+  loadCustomLevels(){ try{ const raw=localStorage.getItem('prism_custom_levels'); if(raw) return JSON.parse(raw);}catch(e){} return []; }
+  saveCustomLevels(){ localStorage.setItem('prism_custom_levels', JSON.stringify(this.customLevels)); }
+
+  // ---------------- level lifecycle ----------------
+  loadLevel(index){
+    this.currentIndex=index;
+    this.level=new Level(this.levelDefs[index]);
+    this.player=new Player(this.level.playerStart.x, this.level.playerStart.y);
+    this.player.yaw = Math.PI; // face into the room
+    this.laser=new Laser(this.level.emitters);
+    this.debris=[];
+    this.recompute();
+    document.getElementById('levelLabel').textContent=`LEVEL ${index+1} / ${this.levelDefs.length} — ${this.level.name}`;
+    document.getElementById('hint').textContent = this.level.hint || '';
+    this.locked=false;
+    this.updateLevelSelector();
+  }
+  restartLevel(){ this.loadLevel(this.currentIndex); }
+  recompute(){ this.laser.compute(this.level); this.level.applyHits(this.laser.hitTargets); }
+  flashMirror(mirror){ mirror._flash = 1.0; }
+
+  // ---------------- input ----------------
+  bindInput(){
+    const canvas=this.canvas;
+    window.addEventListener('keydown', e=>{
+      const k=e.key.toLowerCase();
+      if(k==='r'){ this.restartLevel(); return; }
+      if(k==='t'){ this.rotateMirror(); return; }
+      if(k==='f'){ this.destroyBlock(); return; }
+      this.keys[k]=true;
+    });
+    window.addEventListener('keyup', e=>{ this.keys[e.key.toLowerCase()]=false; });
+
+    canvas.addEventListener('click', ()=>{ if(!this.pointerLocked) canvas.requestPointerLock(); });
+    document.addEventListener('pointerlockchange', ()=>{
+      this.pointerLocked = document.pointerLockElement===canvas;
+    });
+    document.addEventListener('mousemove', e=>{
+      if(!this.pointerLocked) return;
+      this.player.yaw += e.movementX*0.0025;
+      this.player.pitch -= e.movementY*0.0025;
+      this.player.pitch = Math.max(-1.3, Math.min(1.3, this.player.pitch));
+    });
+
+    document.getElementById('restartBtn').addEventListener('click', ()=>this.restartLevel());
+    document.getElementById('menuBtn').addEventListener('click', ()=>{
+      document.exitPointerLock();
+      document.getElementById('overlay').classList.remove('hidden');
+    });
+    document.getElementById('customBtn').addEventListener('click', ()=>{
+      document.exitPointerLock();
+      this.openCustomEditor();
+    });
+    document.getElementById('ovBtn').addEventListener('click', ()=>{
+      document.getElementById('overlay').classList.add('hidden');
+      canvas.requestPointerLock();
+    });
+
+    // discrete grid step on key press, relative to look direction
+    window.addEventListener('keydown', e=>{
+      const k=e.key.toLowerCase();
+      if(!['w','a','s','d'].includes(k) || this.locked) return;
+      if(this.player.moving) return;
+      this.stepMove(k);
+    });
+  }
+
+  // snap the camera's look direction to the nearest cardinal grid direction
+  facingDir(){
+    const p=this.player;
+    const fx=Math.sin(p.yaw), fz=-Math.cos(p.yaw);
+    if(Math.abs(fx) > Math.abs(fz)) return fx>0 ? DIR.RIGHT : DIR.LEFT;
+    return fz>0 ? DIR.DOWN : DIR.UP;
+  }
+
+  // rotate the mirror the player is directly facing (T key)
+  rotateMirror(){
+    if(this.locked) return;
+    const p=this.player, lvl=this.level;
+    const dir=this.facingDir();
+    const mx=p.gx+dir.x, my=p.gy+dir.y;
+    const mirror=lvl.mirrorAt(mx,my);
+    if(!mirror) return;
+    mirror.toggle();
+    this.flashMirror(mirror);
+    this.recompute();
+  }
+
+  // destroy the fixed crate the player is directly facing (F key)
+  destroyBlock(){
+    if(this.locked) return;
+    const p=this.player, lvl=this.level;
+    const dir=this.facingDir();
+    const bx=p.gx+dir.x, by=p.gy+dir.y;
+    const box=lvl.boxAt(bx,by);
+    if(!box || !box.destructible) return;
+    lvl.boxes = lvl.boxes.filter(b=>b!==box);
+    this.spawnDebris(bx,by);
+    this.recompute();
+  }
+
+  spawnDebris(gx,gy){
+    if(!this.debris) this.debris=[];
+    const wx=gx*CELL, wz=gy*CELL;
+    for(let i=0;i<10;i++){
+      this.debris.push({
+        x:wx+(Math.random()-0.5)*0.4, y:0.4+Math.random()*0.6, z:wz+(Math.random()-0.5)*0.4,
+        vx:(Math.random()-0.5)*1.6, vy:Math.random()*2.0+0.5, vz:(Math.random()-0.5)*1.6,
+        life:1.0, size:0.1+Math.random()*0.1
+      });
+    }
+  }
+
+  stepMove(key){
+    const p=this.player;
+    const fx=Math.sin(p.yaw), fz=-Math.cos(p.yaw);   // forward (world XZ)
+    const rx=Math.cos(p.yaw), rz=Math.sin(p.yaw);    // right (world XZ)
+    let mx=0, mz=0;
+    if(key==='w'){ mx+=fx; mz+=fz; }
+    if(key==='s'){ mx-=fx; mz-=fz; }
+    if(key==='d'){ mx+=rx; mz+=rz; }
+    if(key==='a'){ mx-=rx; mz-=rz; }
+    // snap to nearest cardinal grid direction
+    let dir;
+    if(Math.abs(mx) > Math.abs(mz)) dir = mx>0 ? DIR.RIGHT : DIR.LEFT;
+    else dir = mz>0 ? DIR.DOWN : DIR.UP;
+
+    const lvl=this.level;
+    const nx=p.gx+dir.x, ny=p.gy+dir.y;
+    if(!lvl.inBounds(nx,ny)) return;
+    if(lvl.isWall(nx,ny)) return;
+    if(lvl.mirrorAt(nx,ny)) return;
+
+    const box=lvl.boxAt(nx,ny);
+    if(box){
+      if(!box.pushable) return; // fixed crates block movement entirely — must be destroyed
+      const bx=nx+dir.x, by=ny+dir.y;
+      if(!lvl.inBounds(bx,by)) return;
+      if(lvl.isWall(bx,by)) return;
+      if(lvl.mirrorAt(bx,by)) return;
+      if(lvl.isBox(bx,by)) return;
+      if(lvl.exit && lvl.exit.x===bx && lvl.exit.y===by) return;
+      box.x=bx; box.y=by;
+    }
+
+    p.setGrid(nx,ny);
+    this.recompute();
+
+    if(lvl.exit && lvl.exitOpen && nx===lvl.exit.x && ny===lvl.exit.y){
+      this.onLevelComplete();
+    }
+  }
+
+  onLevelComplete(){
+    this.locked=true;
+    document.exitPointerLock();
+
+    if(this.currentIndex<0){
+      // finished a test-play of an unsaved custom level
+      const ov=document.getElementById('overlay');
+      document.getElementById('ovTitle').textContent='TEST CHAMBER CLEARED';
+      document.getElementById('ovBody').textContent='Your custom level works! Open CUSTOM again to tweak it or save it to My Levels.';
+      document.getElementById('ovBtn').textContent='BACK TO MENU';
+      ov.classList.remove('hidden');
+      this._advanceOnEnter = ()=>{
+        ov.classList.add('hidden');
+        document.getElementById('ovBtn').removeEventListener('click', this._advanceOnEnter);
+        document.getElementById('ovBtn').textContent='ENTER VAULT';
+        document.getElementById('ovTitle').textContent='PRISM // LASER VAULT';
+        document.getElementById('ovBody').textContent='Step into the vault. Push crates, bend beams off mirrors, and light every target to unlock the exit. Click to look around.';
+        this.loadLevel(this.progress.unlocked);
+      };
+      document.getElementById('ovBtn').addEventListener('click', this._advanceOnEnter);
+      return;
+    }
+
+    const isLast=this.currentIndex===this.levelDefs.length-1;
+    if(!this.progress.completed.includes(this.currentIndex)) this.progress.completed.push(this.currentIndex);
+    this.progress.unlocked=Math.max(this.progress.unlocked, Math.min(this.currentIndex+1,this.levelDefs.length-1));
+    this.saveProgress(); this.updateLevelSelector();
+
+    const ov=document.getElementById('overlay');
+    document.getElementById('ovTitle').textContent = isLast ? 'ALL CHAMBERS CLEARED' : 'VAULT CLEARED';
+    document.getElementById('ovBody').textContent = isLast
+      ? 'You have completed the full tutorial sequence. Well done, operative.'
+      : 'All targets synchronized. The exit has unsealed. Proceeding to the next chamber...';
+    document.getElementById('ovBtn').textContent = isLast ? 'REPLAY FROM START' : 'CONTINUE';
+    ov.classList.remove('hidden');
+    this._advanceOnEnter = ()=>{
+      ov.classList.add('hidden');
+      this.loadLevel(isLast ? 0 : this.currentIndex+1);
+      this.canvas.requestPointerLock();
+      document.getElementById('ovBtn').removeEventListener('click', this._advanceOnEnter);
+      document.getElementById('ovBtn').textContent='ENTER VAULT';
+      document.getElementById('ovTitle').textContent='PRISM // LASER VAULT';
+      document.getElementById('ovBody').textContent='Step into the vault. Push crates, bend beams off mirrors, and light every target to unlock the exit. Click to look around.';
+    };
+    document.getElementById('ovBtn').addEventListener('click', this._advanceOnEnter);
+  }
+
+  // ---------------- level selector UI ----------------
+  buildLevelSelector(){
+    const wrap=document.getElementById('levels'); wrap.innerHTML='';
+    this.levelDefs.forEach((def,i)=>{
+      const isCustom = i>=this.builtinCount;
+      const b=document.createElement('div');
+      b.className='lvl-btn'+(isCustom?' custom':'');
+      b.textContent=i+1; b.title=def.name+(isCustom?' (custom)':'');
+      b.addEventListener('click', ()=>{
+        if(isCustom || i<=this.progress.unlocked){
+          this.loadLevel(i);
+          document.getElementById('overlay').classList.add('hidden');
+        }
+      });
+      wrap.appendChild(b);
+    });
+    const addBtn=document.createElement('div');
+    addBtn.className='lvl-btn addNew'; addBtn.textContent='+'; addBtn.title='Create a custom level';
+    addBtn.addEventListener('click', ()=>this.openCustomEditor());
+    wrap.appendChild(addBtn);
+    this.updateLevelSelector();
+  }
+  updateLevelSelector(){
+    document.querySelectorAll('.lvl-btn:not(.addNew)').forEach((b,i)=>{
+      b.classList.toggle('done', this.progress.completed.includes(i));
+      b.classList.toggle('active', i===this.currentIndex);
+    });
+  }
+
+  // ---------------- custom level editor ----------------
+  initCustomEditor(){
+    const ta=document.getElementById('ceText');
+    ta.value = JSON.stringify({
+      name:'My Level',
+      layout:[
+        '#########',
+        '#.......#',
+        '#..B....#',
+        '#P......#',
+        '#########'
+      ],
+      emitters:[{x:1,y:2,dir:'right'}],
+      mirrors:[],
+      targets:[{x:7,y:2}],
+      hint:'Optional hint text shown in the HUD.'
+    }, null, 2);
+
+    document.getElementById('ceCancelBtn').addEventListener('click', ()=>this.closeCustomEditor());
+    document.getElementById('ceLoadBtn').addEventListener('click', ()=>this.testPlayCustom());
+    document.getElementById('ceSaveBtn').addEventListener('click', ()=>this.saveCustomFromEditor());
+  }
+  openCustomEditor(){
+    document.getElementById('customOverlay').classList.remove('hidden');
+    document.getElementById('ceError').textContent='';
+  }
+  closeCustomEditor(){
+    document.getElementById('customOverlay').classList.add('hidden');
+  }
+
+  // parse + validate the JSON in the editor textarea; returns a level def or null
+  parseCustomDef(){
+    const errEl=document.getElementById('ceError');
+    errEl.textContent='';
+    let def;
+    try{ def=JSON.parse(document.getElementById('ceText').value); }
+    catch(e){ errEl.textContent='Invalid JSON: '+e.message; return null; }
+
+    if(!def.name) def.name='Custom Level';
+    if(!Array.isArray(def.layout) || def.layout.length<3){ errEl.textContent='layout must be an array of at least 3 row strings.'; return null; }
+    const width=def.layout[0].length;
+    if(!def.layout.every(r=>typeof r==='string' && r.length===width)){ errEl.textContent='Every layout row must be a string of the same length.'; return null; }
+    if(!def.layout.some(r=>r.includes('P'))){ errEl.textContent="layout must contain exactly one 'P' (player start)."; return null; }
+    if(!Array.isArray(def.emitters) || def.emitters.length===0){ errEl.textContent='emitters must be a non-empty array of {x,y,dir}.'; return null; }
+    const validDirs=['up','down','left','right'];
+    for(const e of def.emitters){
+      if(typeof e.x!=='number'||typeof e.y!=='number'||!validDirs.includes(e.dir)){
+        errEl.textContent='Each emitter needs numeric x,y and dir one of up/down/left/right.'; return null;
+      }
+    }
+    def.mirrors = Array.isArray(def.mirrors) ? def.mirrors : [];
+    for(const m of def.mirrors){
+      if(typeof m.x!=='number'||typeof m.y!=='number'||(m.type!=='/'&&m.type!=='\\')){
+        errEl.textContent="Each mirror needs numeric x,y and type '/' or '\\\\'."; return null;
+      }
+    }
+    def.targets = Array.isArray(def.targets) ? def.targets : [];
+    if(def.targets.length===0){ errEl.textContent='targets must contain at least one {x,y}.'; return null; }
+    for(const t of def.targets){
+      if(typeof t.x!=='number'||typeof t.y!=='number'){ errEl.textContent='Each target needs numeric x,y.'; return null; }
+    }
+    def.layout = def.layout.slice();
+    attachExit(def);
+    return def;
+  }
+
+  testPlayCustom(){
+    const def=this.parseCustomDef();
+    if(!def) return;
+    this.closeCustomEditor();
+    this._testDef = def;
+    this.level=new Level(def);
+    this.player=new Player(this.level.playerStart.x, this.level.playerStart.y);
+    this.player.yaw=Math.PI;
+    this.laser=new Laser(this.level.emitters);
+    this.debris=[];
+    this.recompute();
+    document.getElementById('levelLabel').textContent=`CUSTOM — ${def.name} (test play)`;
+    document.getElementById('hint').textContent=def.hint||'';
+    this.locked=false;
+    this.currentIndex=-1; // not part of the normal level list while testing
+    this.canvas.requestPointerLock();
+  }
+
+  saveCustomFromEditor(){
+    const def=this.parseCustomDef();
+    if(!def) return;
+    this.customLevels.push(def);
+    this.saveCustomLevels();
+    this.levelDefs.push(def);
+    this.buildLevelSelector();
+    this.closeCustomEditor();
+    this.loadLevel(this.levelDefs.length-1);
+    this.canvas.requestPointerLock();
+  }
+
+  // ---------------- rendering ----------------
+  render(){
+    const gl=this.gl, lvl=this.level, p=this.player;
+    gl.viewport(0,0,this.canvas.width,this.canvas.height);
+    gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+
+    const aspect=this.canvas.width/Math.max(1,this.canvas.height);
+    const proj=mat4.perspective(1.0, aspect, 0.05, 60);
+    const eye=p.eyePos();
+    const fwd=p.forward();
+    const center=[eye[0]+fwd[0], eye[1]+fwd[1], eye[2]+fwd[2]];
+    const view=mat4.lookAt(eye, center, [0,1,0]);
+
+    gl.uniformMatrix4fv(this.loc.uProj,false,proj);
+    gl.uniformMatrix4fv(this.loc.uView,false,view);
+    gl.uniform3fv(this.loc.uLightDir, [0.4,-1.0,0.3]);
+    gl.uniform3fv(this.loc.uFogColor, [0.02,0.035,0.055]);
+
+    // floor + ceiling tiles (checker pattern for a grounded, textured feel)
+    for(let y=0;y<lvl.rows;y++){
+      for(let x=0;x<lvl.cols;x++){
+        const shade=((x+y)%2===0)?0.10:0.075;
+        this.drawCube([x*CELL,-0.05,y*CELL],[CELL,0.1,CELL],0,[shade*1.4,shade*1.8,shade*2.1],0);
+        this.drawCube([x*CELL,WALL_H+0.05,y*CELL],[CELL,0.1,CELL],0,[0.03,0.045,0.06],0);
+      }
+    }
+    // walls
+    lvl.walls.forEach(key=>{
+      const [x,y]=key.split(',').map(Number);
+      const jitter = ((x*13+y*7)%5)/100;
+      this.drawCube([x*CELL,WALL_H/2,y*CELL],[CELL,WALL_H,CELL],0,[0.11+jitter,0.17+jitter,0.24+jitter],0);
+    });
+    // closed exit rendered as a glowing red sealed wall; open exit as a floor pad
+    if(lvl.exit){
+      const {x,y}=lvl.exit;
+      if(!lvl.exitOpen){
+        this.drawCube([x*CELL,WALL_H/2,y*CELL],[CELL,WALL_H,CELL],0,[0.25,0.05,0.08],0.15);
+      } else {
+        this.drawCube([x*CELL,-0.02,y*CELL],[CELL*0.9,0.06,CELL*0.9],0,[0.1,0.5,0.6],0.6);
+        this.drawCube([x*CELL,1.6,y*CELL],[0.08,3.2,0.08],0,[0.2,0.9,1.0],0.8);
+      }
+    }
+    // targets — glowing discs on the floor
+    lvl.targets.forEach(t=>{
+      const col = t.active ? [0.15,0.85,1.0] : [0.4,0.08,0.12];
+      this.drawCube([t.x*CELL,0.03,t.y*CELL],[CELL*0.42,0.06,CELL*0.42],0,col, t.active?0.7:0.1);
+    });
+    // mirrors — thin rotated panels; briefly flash brighter when just rotated
+    lvl.mirrors.forEach(m=>{
+      const rot = m.type==='/' ? Math.PI*0.25 : -Math.PI*0.25;
+      const flash = m._flash||0;
+      const emissive = 0.35 + flash*0.8;
+      const col = [1.0, 0.82+flash*0.18, 0.4+flash*0.5];
+      this.drawCube([m.x*CELL,1.0,m.y*CELL],[CELL*1.05,1.6,0.06],rot,col,emissive);
+    });
+    // boxes — wooden pushable crates vs. bolted-down destructible crates
+    lvl.boxes.forEach(b=>{
+      if(b.pushable){
+        this.drawCube([b.x*CELL,0.55,b.y*CELL],[CELL*0.72,1.1,CELL*0.72],0.0,[0.42,0.28,0.14],0.05);
+      } else {
+        const pulse=0.25+Math.sin(performance.now()*0.004)*0.08;
+        this.drawCube([b.x*CELL,0.55,b.y*CELL],[CELL*0.72,1.1,CELL*0.72],0.0,[0.5,0.14,0.12],pulse);
+        this.drawCube([b.x*CELL,0.55,b.y*CELL],[CELL*0.5,0.12,CELL*0.5],Math.PI*0.25,[1.0,0.6,0.2],0.5);
+      }
+    });
+
+    // debris — fading fragments from a recently destroyed crate
+    if(this.debris) this.debris.forEach(d=>{
+      this.drawCube([d.x,d.y,d.z],[d.size,d.size,d.size],d.x*3,[0.9,0.4,0.2], d.life*0.6);
+    });
+
+    // laser beams — thin glowing boxes stretched along each segment
+    gl.disable(gl.DEPTH_TEST);
+    this.laser.segments.forEach(s=>{
+      const x1=s.x1*CELL, z1=s.y1*CELL, x2=s.x2*CELL, z2=s.y2*CELL;
+      const mx=(x1+x2)/2, mz=(z1+z2)/2;
+      const len=Math.hypot(x2-x1,z2-z1);
+      const ang=Math.atan2(x2-x1, z2-z1); // angle around Y so box's Z axis aligns with segment
+      if(len<0.001) return;
+      this.drawCube([mx,1.0,mz],[0.05,0.05,len+0.05],ang,[1.0,0.25,0.35],1.0);
+      this.drawCube([mx,1.0,mz],[0.14,0.14,len+0.05],ang,[1.0,0.25,0.35],0.4);
+    });
+    gl.enable(gl.DEPTH_TEST);
+  }
+
+  // ---------------- main loop ----------------
+  loop(now){
+    const dt=Math.min(0.05,(now-this.lastTime)/1000);
+    this.lastTime=now;
+    this.player.update(dt);
+    if(this.level){
+      this.level.mirrors.forEach(m=>{ if(m._flash) m._flash=Math.max(0,m._flash-dt*2.5); });
+    }
+    if(this.debris && this.debris.length){
+      this.debris.forEach(d=>{
+        d.vy -= dt*4.5; d.x+=d.vx*dt; d.y+=d.vy*dt; d.z+=d.vz*dt;
+        if(d.y<0.05){ d.y=0.05; d.vy=0; }
+        d.life -= dt*0.9;
+      });
+      this.debris = this.debris.filter(d=>d.life>0);
+    }
+    this.render();
+    requestAnimationFrame(this.loop.bind(this));
+  }
+}
+
+/* =====================================================================
+   LEVEL DATA — 10 handcrafted tutorial levels
+   Layout legend: # wall, . floor, P player start, B pushable crate,
+   C fixed/destructible crate (blocks movement + beams, cannot be
+   pushed — destroy it with F), X exit
+   ===================================================================== */
+const LEVELS = [];
+
+LEVELS.push({ name:'First Light', layout:['#######','#.....#','#.....#','#P....#','#######'],
+  emitters:[{x:1,y:1,dir:'right'}], targets:[{x:5,y:1}] });
+
+LEVELS.push({ name:'Push', layout:['########','#......#','#..B...#','#P.....#','########'],
+  emitters:[{x:1,y:2,dir:'right'}], targets:[{x:6,y:2}], hint:'Move the crate out of the beam path.' });
+
+LEVELS.push({ name:'Demolition',
+  layout:['##########','#........#','#....C...#','#P.......#','##########'],
+  emitters:[{x:1,y:2,dir:'right'}], targets:[{x:8,y:2}],
+  hint:'This crate is bolted down — pushing does nothing. Face it and press F to destroy it.' });
+
+LEVELS.push({ name:'Bend of Light', layout:['########','#......#','#......#','#P.....#','########'],
+  emitters:[{x:1,y:3,dir:'right'}], mirrors:[{x:4,y:3,type:'/'}], targets:[{x:4,y:1}] });
+
+LEVELS.push({ name:'Double Bend', layout:['#########','#.......#','#.......#','#.......#','#P......#','#########'],
+  emitters:[{x:1,y:4,dir:'right'}], mirrors:[{x:4,y:4,type:'/'},{x:4,y:1,type:'\\'}], targets:[{x:7,y:1}] });
+
+LEVELS.push({ name:'Two Eyes',
+  layout:['#########','#.......#','#.......#','#.......#','#P......#','#.......#','#########'],
+  emitters:[{x:1,y:1,dir:'right'},{x:1,y:4,dir:'right'}],
+  mirrors:[{x:7,y:1,type:'\\'},{x:7,y:4,type:'/'}], targets:[{x:7,y:3},{x:7,y:2}] });
+
+LEVELS.push({ name:'Detour', layout:['#######','#.....#','#P....#','#######'],
+  emitters:[{x:1,y:1,dir:'right'}], mirrors:[{x:3,y:1,type:'\\'}], targets:[{x:3,y:2}],
+  hint:'Just one bend — watch the beam turn, then walk over to it.' });
+
+LEVELS.push({ name:'Box Bridge',
+  layout:['#########','#.......#','#.......#','#.......#','#P..B...#','#########'],
+  emitters:[{x:1,y:4,dir:'right'}], mirrors:[{x:6,y:4,type:'/'}], targets:[{x:6,y:1}],
+  boxesExtra:[{x:6,y:2,type:'C'}],
+  hint:'Clear the pushable crate from the beam, then destroy the bolted crate blocking the reflection.' });
+
+LEVELS.push({ name:'Triple Sync',
+  layout:['###########','#.........#','#.........#','#.........#','#.........#','#P........#','###########'],
+  emitters:[{x:1,y:1,dir:'right'},{x:1,y:5,dir:'right'}],
+  mirrors:[{x:9,y:1,type:'\\'},{x:9,y:5,type:'/'},{x:5,y:3,type:'\\'}],
+  targets:[{x:9,y:3},{x:5,y:1}], hint:'Two beams, three mirrors — trace each path separately.' });
+
+LEVELS.push({ name:'Final Vault',
+  layout:['############','#....C.....#','#..........#','#..........#','#..........#','#....B.....#','#P.........#','############'],
+  emitters:[{x:1,y:1,dir:'right'},{x:1,y:5,dir:'right'}],
+  mirrors:[{x:10,y:1,type:'\\'},{x:9,y:5,type:'\\'}],
+  targets:[{x:10,y:3},{x:9,y:6}],
+  hint:'One crate is bolted down — destroy it. The other can be pushed clear.' });
+
+// a couple of levels place a fixed crate via a manual entry rather than the
+// layout grid — merge those in now that boxesInit parsing exists.
+LEVELS.forEach(def=>{
+  if(def.boxesExtra){
+    def.layout = def.layout.map(row=>row); // keep layout untouched
+    def._extraCrates = def.boxesExtra;
+  }
+});
+
+// attach an exit tile to a level def if it doesn't already have one
+// (bottom-right open floor cell) — reused for custom levels too.
+function attachExit(def){
+  const rows=def.layout;
+  const hasExit = rows.some(r=>r.includes('X'));
+  if(hasExit) return;
+  outer: for(let y=rows.length-2;y>=1;y--){
+    for(let x=rows[y].length-2;x>=1;x--){
+      if(rows[y][x]==='.'){ const c=rows[y].split(''); c[x]='X'; rows[y]=c.join(''); break outer; }
+    }
+  }
+}
+LEVELS.forEach(def=>attachExit(def));
+
+// stamp any manually-specified extra crates directly into the layout grid
+// so the standard Level parser (which reads 'B'/'C' from the grid) sees them.
+LEVELS.forEach(def=>{
+  if(def._extraCrates){
+    def._extraCrates.forEach(c=>{
+      const row=def.layout[c.y].split('');
+      row[c.x]=c.type;
+      def.layout[c.y]=row.join('');
+    });
+  }
+});
+
+
+/* =====================================================================
+   BOOT
+   ===================================================================== */
+window.addEventListener('DOMContentLoaded', ()=>{
+  const canvas=document.getElementById('stage');
+  window.__game = new Game(canvas, LEVELS);
+});
+</script>
+</body>
+</html>
